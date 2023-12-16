@@ -1,0 +1,127 @@
+char ssid[] = "Gia Bao";
+char pass[] = "29122003";
+
+int emptyTankDistance = 70 ;  //bể trống
+int fullTankDistance =  20 ;  //bể đầy
+bool isRaining = false; //giá trị mưa ban đầu
+int triggerPer =   10 ;  //giá trị so sánh
+float duration;
+float distance;
+int   waterLevelPer;
+unsigned long lastDistanceCheckTime = 0; // Thời điểm cuối cùng kiểm tra khoảng cách
+float previousDistance = 0; // Giá trị khoảng cách trước đó
+
+#include <Adafruit_SSD1306.h>
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include "ThingSpeak.h"
+
+WiFiClient  client;
+unsigned long myChannelNumber = 2304721;
+const char * myWriteAPIKey = "6KGNFPZI9CD5WO37";
+// thiết lập chân
+#define TRIGPIN    27  //D27
+#define ECHOPIN    26  //D26
+#define wifiLed    2   //D2
+#define GreenLed   14  //D14
+#define PIN_CamBienMua 4 //D4
+#define VPIN_BUTTON_1    V1 
+#define VPIN_BUTTON_2    V2
+#define SCREEN_WIDTH 128 
+#define SCREEN_HEIGHT 32 
+#define OLED_RESET     -1 
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+void displayData(int value){
+  display.clearDisplay();
+  display.setTextSize(4);
+  display.setCursor(8,2);
+  display.print(value);
+  display.print(" ");
+  display.print("%");
+  display.display();
+}
+
+void measureDistance() {
+  isRaining = digitalRead(PIN_CamBienMua); // Đây chỉ là ví dụ, bạn cần sử dụng chân GPIO thật của cảm biến mưa
+  // Tiếp tục đo khoảng cách và xử lý dữ liệu như bình thường
+  digitalWrite(TRIGPIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIGPIN, HIGH);
+  delayMicroseconds(20);
+  digitalWrite(TRIGPIN, LOW);
+
+  duration = pulseIn(ECHOPIN, HIGH);
+  // Xác định khoảng cách từ thời gian đo được
+  distance = ((duration / 2) * 0.343) / 10; // Chia cho 10 để đổi từ mm thành cm
+
+  // Kiểm tra khoảng cách giảm 10cm trong 5 giây
+  unsigned long currentTime = millis(); // Lấy thời gian hiện tại
+  if (isRaining == LOW){
+    Serial.println(" đang mưa");
+  if (currentTime - lastDistanceCheckTime >= 2000) { // Nếu đã qua 5 giây
+    float distanceChange = abs(previousDistance - distance); // Tính sự thay đổi khoảng cách
+    if (distanceChange >= 10) { // Nếu khoảng cách giảm 10cm
+      Serial.println("Cảnh báo: Khoảng cách giảm 10cm trong 2 giây!");
+      // Thực hiện các hành động cảnh báo khác tại đây
+    }
+    // Cập nhật giá trị và thời gian cho lần kiểm tra tiếp theo
+    previousDistance = distance;
+    lastDistanceCheckTime = currentTime;
+  }}
+  else{}
+
+  // Hiển thị dữ liệu lên màn hình OLED và gửi lên Blynk app
+  if (distance > fullTankDistance && distance < emptyTankDistance) {
+    waterLevelPer = map((int)distance, emptyTankDistance, fullTankDistance, 0, 100);
+    displayData(waterLevelPer);
+    ThingSpeak.writeField(myChannelNumber, 4, waterLevelPer, myWriteAPIKey);
+    ThingSpeak.writeField(myChannelNumber, 5, distance, myWriteAPIKey);
+    // In kết quả ra Serial Monitor
+    Serial.print("Khoảng cách: ");
+    Serial.print(distance);
+    Serial.println(" cm");
+
+    // Kiểm tra và bật tín hiệu cảnh báo
+    if (waterLevelPer < triggerPer) {
+      digitalWrite(GreenLed, HIGH);
+    } else {
+      digitalWrite(GreenLed, LOW);
+    }
+    if (distance < fullTankDistance +5) {
+      digitalWrite(GreenLed, HIGH);
+    }
+  }
+
+  // Đợi trước khi đo lại khoảng cách
+  delay(1000);
+}
+void setup() {
+  // Set up serial monitor
+  Serial.begin(115200);
+ 
+  // Set pinmodes for sensor connections
+  pinMode(ECHOPIN, INPUT);
+  pinMode(TRIGPIN, OUTPUT);
+  pinMode(wifiLed, OUTPUT);
+  pinMode(GreenLed, OUTPUT);
+  pinMode(PIN_CamBienMua, INPUT);
+  digitalWrite(wifiLed, LOW);
+  digitalWrite(GreenLed, LOW);
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  delay(1000);  
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.clearDisplay();
+
+  WiFi.begin(ssid, pass);
+
+  ThingSpeak.begin(client);
+  delay(1000);
+ 
+}
+ void loop() {
+
+  measureDistance(); 
+}
+
